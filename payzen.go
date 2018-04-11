@@ -3,7 +3,6 @@ package payzengo
 import (
 	"crypto/sha1"
 	"fmt"
-	"log"
 	"sort"
 	"strconv"
 	"strings"
@@ -126,7 +125,6 @@ func (p *payzenPaiement) genSignature() string {
 		sar = append(sar, b[1])
 	}
 	str := strings.Join(sar, "+") + "+" + p.Config.Site.GetCertificate(p.Config.SiProduction)
-	log.Println(str)
 	p.signature = getSha1(str)
 	return p.signature
 }
