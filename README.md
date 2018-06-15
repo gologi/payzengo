@@ -23,9 +23,9 @@ orderid:=1000
 clientid:=1
   
 p, err := payzengo.GetNewPaiement(confPayzen, time.Now(), amount, transactionid, orderid, clientid)
-			if err != nil {
-				log.Println(err)
-			}
-			p.SetData("custom_form_var", "hop")
-			paymentForm:= p.GetForm("<input type=submit/><script>payzenform.submit();</script>"))
+if err != nil {
+	log.Println(err)
+}
+p.SetData("custom_form_var", "hop")
+paymentForm:= p.GetForm("<input type=submit/><script>payzenform.submit();</script>"))
 ```
