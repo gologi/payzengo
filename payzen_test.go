@@ -10,7 +10,7 @@ func TestSignature(t *testing.T) {
 
 	testSite := &PayzenSite{
 		Site:            "TEST",
-		SiteId:          12345678,
+		SiteID:          12345678,
 		CertificateDev:  "1122334455667788",
 		CertificateProd: "1122334455667789",
 	}
@@ -40,7 +40,7 @@ func TestTransactionID(t *testing.T) {
 
 	testSite := &PayzenSite{
 		Site:            "TEST",
-		SiteId:          12345678,
+		SiteID:          12345678,
 		CertificateDev:  "1122334455667788",
 		CertificateProd: "1122334455667789",
 	}
@@ -64,7 +64,7 @@ func TestTransactionID(t *testing.T) {
 func ExampleForm() {
 	testSite := &PayzenSite{
 		Site:            "TEST",
-		SiteId:          12345678,
+		SiteID:          12345678,
 		CertificateDev:  "1122334455667788",
 		CertificateProd: "1122334455667789",
 	}

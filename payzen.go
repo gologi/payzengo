@@ -1,7 +1,6 @@
 package payzengo
 
 import (
-	"crypto/sha1"
 	"fmt"
 	"sort"
 	"strconv"
@@ -13,9 +12,32 @@ import (
 
 type PayzenSite struct {
 	Site            string
-	SiteId          uint64
+	SiteID          uint64
 	CertificateDev  string
 	CertificateProd string
+}
+
+var payzenSites map[uint64]*PayzenSite
+
+func init() {
+	payzenSites = make(map[uint64]*PayzenSite)
+}
+
+func GetSite(siteid uint64) (*PayzenSite, bool) {
+	s, ok := payzenSites[siteid]
+	return s, ok
+}
+func GetCertificate(siteid uint64, SiProduction bool) (string, *PayzenSite) {
+	site, ok := GetSite(siteid)
+	if !ok {
+		return "", nil
+	}
+	return site.GetCertificate(SiProduction), site
+}
+
+func (site *PayzenSite) Register() *PayzenSite {
+	payzenSites[site.SiteID] = site
+	return site
 }
 
 func (site *PayzenSite) GetCertificate(SiProduction bool) string {
@@ -28,10 +50,12 @@ func (site *PayzenSite) GetCertificate(SiProduction bool) string {
 type PayzenPaiement interface {
 	GetSignature() string
 	GetForm(string) string
+	SetData(string, string)
 }
 
 type PaymentConfig struct {
 	Site                   *PayzenSite
+	SiHMAC                 bool
 	Currency               vars.Currency
 	PaymentType            vars.PaymentType
 	ActionMode             vars.ActionMode
@@ -87,6 +111,7 @@ type payzenPaiement struct {
 	CustomerID      int
 	OrderID         int
 	ClientID        int
+	Data            map[string]string
 	signature       string
 }
 
@@ -104,7 +129,7 @@ func (p *payzenPaiement) GetSignature() string {
 	return p.signature
 }
 
-func (p *PaymentConfig) SetAutomaticReturn(msg string, timeout int, msgerror string, timeouterror int) {
+func (p *PaymentConfig) SetAutomaticReturn(msg string, timeout int, msgerror string, timeouterror int) *PaymentConfig {
 	p.ReturnMode = vars.ReturnModeGet
 	if msg == "" {
 		msg = "Vous allez être rédirigé vers le site marchand"
@@ -116,33 +141,7 @@ func (p *PaymentConfig) SetAutomaticReturn(msg string, timeout int, msgerror str
 	p.RedirectSuccessTimeout = strconv.Itoa(timeout)
 	p.RedirectErrorMessage = msgerror
 	p.RedirectErrorTimeout = strconv.Itoa(timeouterror)
-}
-
-func (p *payzenPaiement) genSignature() string {
-	var sar []string
-
-	for _, b := range p.getMap() {
-		sar = append(sar, b[1])
-	}
-	str := strings.Join(sar, "+") + "+" + p.Config.Site.GetCertificate(p.Config.SiProduction)
-	p.signature = getSha1(str)
-	return p.signature
-}
-
-func getSha1(s string) string {
-	sha := sha1.New()
-	sha.Write([]byte(s))
-	return fmt.Sprintf("%x", sha.Sum(nil))
-}
-
-type argsArr [][]string
-
-func (a argsArr) Len() int { return len(a) }
-func (a argsArr) Less(i, j int) bool {
-	return strings.ToLower(a[i][0]) < strings.ToLower(a[j][0])
-}
-func (a argsArr) Swap(i, j int) {
-	a[i], a[j] = a[j], a[i]
+	return p
 }
 
 func (p *payzenPaiement) getMap() argsArr {
@@ -153,7 +152,7 @@ func (p *payzenPaiement) getMap() argsArr {
 		{vars.VadsCurrency, strconv.Itoa(int(p.Config.Currency))},
 		{vars.VadsCtxMode, getBoolValue(p.Config.SiProduction, vars.PayzenCtxProduction, vars.PayzenCtxTest)},
 		{vars.VadsPaymentConfig, string(p.Config.PaymentType)},
-		{vars.VadsSiteID, strconv.FormatUint(p.Config.Site.SiteId, 10)},
+		{vars.VadsSiteID, strconv.FormatUint(p.Config.Site.SiteID, 10)},
 		{vars.VadsTransDate, p.TransactionDate},
 		{vars.VadsTransID, fmt.Sprintf("%06d", p.TransactionID)},
 		{vars.VadsVersion, p.Config.Version},
@@ -218,24 +217,24 @@ func (p *payzenPaiement) getMap() argsArr {
 			[]string{vars.VadsURLError, p.Config.URLError},
 		)
 	}
-	// TODO
-	/*
-		if p.RedirectSuccessTimeout != "" {
-			m = append(m,
-				[]string{vars.VadsRedirectSuccessMessage, p.RedirectSuccessMessage},
-				[]string{vars.VadsRedirectSuccessTimeout, p.RedirectSuccessTimeout},
-				[]string{vars.VadsRedirectSuccessMessage, p.RedirectSuccessMessage},
-				[]string{vars.VadsRedirectSuccessTimeout, p.RedirectSuccessTimeout},
-			)
-		}
-	*/
+	if p.Config.RedirectSuccessTimeout != "" {
+		m = append(m,
+			[]string{vars.VadsRedirectSuccessMessage, p.Config.RedirectSuccessMessage},
+			[]string{vars.VadsRedirectSuccessTimeout, p.Config.RedirectSuccessTimeout},
+			[]string{vars.VadsRedirectErrorMessage, p.Config.RedirectErrorMessage},
+			[]string{vars.VadsRedirectErrorTimeout, p.Config.RedirectErrorTimeout},
+		)
+	}
 	sort.Sort(&m)
 	return m
 }
-
+func (p *payzenPaiement) SetData(key, value string) {
+	key = strings.ToLower(key)
+	p.Data[key] = value
+}
 func (p *payzenPaiement) GetForm(htmlSubmitButton string) string {
 	return strings.Join([]string{
-		`<form method="POST" action="https://secure.payzen.eu/vads-payment/">`,
+		`<form method="POST" action="https://secure.payzen.eu/vads-payment/" id="payzenform">`,
 		p.getFormInput(),
 		htmlSubmitButton,
 		"</form>"}, "")
@@ -245,6 +244,9 @@ func (p *payzenPaiement) getFormInput() string {
 
 	for _, b := range append(p.getMap(), []string{vars.VadsSignature, p.GetSignature()}) {
 		sarray = append(sarray, fmt.Sprintf(`<input type=hidden name=%s value="%s"/>`, b[0], b[1]))
+	}
+	for k, v := range p.Data {
+		sarray = append(sarray, fmt.Sprintf(`<input type=hidden name=%s value="%s"/>`, k, v))
 	}
 	return strings.Join(sarray, "")
 }
@@ -259,6 +261,7 @@ func GetNewPaiement(payzenConfig *PaymentConfig, dt time.Time, amountCents uint6
 		OrderID:         orderID,
 		ClientID:        clientID,
 		Amount:          amountCents,
+		Data:            make(map[string]string),
 		TransactionDate: dt.UTC().Format("20060102150405"),
 	}
 	p.Config.init()
